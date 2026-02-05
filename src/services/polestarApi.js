@@ -155,6 +155,31 @@ export const logout = () => {
   clearAuth();
 };
 
+export const validateSession = async () => {
+  const accessToken = getAccessToken();
+  const refreshToken = getRefreshToken();
+
+  if (!accessToken || !refreshToken) {
+    return false;
+  }
+
+  try {
+    const response = await axios.post(
+      `${POLESTAR_API_BASE}/account/v2/auth/refresh-token`,
+      { refresh_token: refreshToken },
+    );
+
+    const { access_token, refresh_token } = response.data;
+    setTokens(access_token, refresh_token);
+    emitAuthEvent({ type: "token_refreshed" });
+    return true;
+  } catch (error) {
+    clearAuth();
+    emitAuthEvent({ type: "session_expired", reason: "validation_failed" });
+    return false;
+  }
+};
+
 export const searchVessels = async (params) => {
   const response = await polestarApi.get("/vessel-insights/v1/vessel-search", {
     params,

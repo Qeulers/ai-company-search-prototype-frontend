@@ -2,14 +2,14 @@
 import { RouterView, useRouter } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { onMounted, onUnmounted } from "vue";
-import { onAuthEvent } from "./services/polestarApi";
+import { onAuthEvent, validateSession } from "./services/polestarApi";
 
 const authStore = useAuthStore();
 const router = useRouter();
 
 let unsubscribeAuthEvent = null;
 
-onMounted(() => {
+onMounted(async () => {
   authStore.initializeFromStorage();
 
   unsubscribeAuthEvent = onAuthEvent((event) => {
@@ -20,6 +20,10 @@ onMounted(() => {
       authStore.initializeFromStorage();
     }
   });
+
+  if (authStore.isAuthenticated) {
+    await validateSession();
+  }
 });
 
 onUnmounted(() => {
