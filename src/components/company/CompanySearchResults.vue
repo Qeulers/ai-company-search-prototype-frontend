@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import ConfidenceBadge from "../common/ConfidenceBadge.vue";
 import DepartmentCard from "./DepartmentCard.vue";
 import AddressMap from "./AddressMap.vue";
@@ -29,6 +29,45 @@ const otherDepartments =
   props.data.departments?.filter(
     (d) => !props.data.persona_relevant_departments?.includes(d.name),
   ) || [];
+
+const tierLabels = {
+  1: {
+    name: "Tier 1 - Official Sources",
+    description: "Company websites, corporate registries",
+  },
+  2: {
+    name: "Tier 2 - Verified Directories",
+    description: "Maritime databases, industry associations",
+  },
+  3: {
+    name: "Tier 3 - Secondary Sources",
+    description: "News articles, general directories",
+  },
+  4: { name: "Tier 4 - Other Sources", description: "Other online sources" },
+};
+
+const groupedSources = computed(() => {
+  const sources = props.data.sources || [];
+  const groups = {};
+
+  sources.forEach((source) => {
+    const tier = source.tier || 4;
+    if (!groups[tier]) {
+      groups[tier] = [];
+    }
+    groups[tier].push(source);
+  });
+
+  return Object.keys(groups)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map((tier) => ({
+      tier,
+      label: tierLabels[tier]?.name || `Tier ${tier}`,
+      description: tierLabels[tier]?.description || "",
+      sources: groups[tier],
+    }));
+});
 
 const downloadFile = (content, filename, mimeType) => {
   const blob = new Blob([content], { type: mimeType });
@@ -470,26 +509,36 @@ const exportCSV = () => {
 
           <div v-if="data.sources?.length > 0">
             <h4
-              class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-2"
+              class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3"
             >
               Sources
             </h4>
-            <ul class="space-y-1">
-              <li
-                v-for="source in data.sources"
-                :key="source.url"
-                class="text-sm"
+            <div class="space-y-3">
+              <div
+                v-for="group in groupedSources"
+                :key="group.tier"
+                class="bg-slate-50 rounded-lg p-3"
               >
-                <a
-                  :href="source.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-primary hover:underline truncate block"
-                >
-                  {{ source.name }}
-                </a>
-              </li>
-            </ul>
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-sm font-medium text-slate-700">{{
+                    group.label
+                  }}</span>
+                  <span class="text-xs text-slate-500">{{
+                    group.description
+                  }}</span>
+                </div>
+                <ul class="space-y-1 pl-1">
+                  <li
+                    v-for="source in group.sources"
+                    :key="source.url"
+                    class="text-sm text-slate-600 flex items-start gap-2"
+                  >
+                    <span class="text-slate-400 mt-1">•</span>
+                    <span>{{ source.name }}</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
           </div>
         </template>
 
