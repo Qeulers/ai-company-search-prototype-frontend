@@ -155,12 +155,28 @@ export const logout = () => {
   clearAuth();
 };
 
+const isAccessTokenExpired = (token) => {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    if (!payload.exp) return false;
+    // Consider expired if less than 5 minutes remaining
+    return payload.exp * 1000 < Date.now() + 5 * 60 * 1000;
+  } catch {
+    return true;
+  }
+};
+
 export const validateSession = async () => {
   const accessToken = getAccessToken();
   const refreshToken = getRefreshToken();
 
   if (!accessToken || !refreshToken) {
     return false;
+  }
+
+  // Skip proactive refresh if the access token is still valid
+  if (!isAccessTokenExpired(accessToken)) {
+    return true;
   }
 
   try {
