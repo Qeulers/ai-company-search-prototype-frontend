@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useVesselStore } from "../stores/vessel";
 import { useUserStore } from "../stores/user";
+import { useCompanySearchStore, buildCacheKey } from "../stores/companySearch";
 import { searchCompany } from "../services/backendApi";
 import AppHeader from "../components/layout/AppHeader.vue";
 import VesselInfoCard from "../components/vessel/VesselInfoCard.vue";
@@ -15,10 +16,11 @@ const route = useRoute();
 const router = useRouter();
 const vesselStore = useVesselStore();
 const userStore = useUserStore();
+const companySearchStore = useCompanySearchStore();
 
 const companySearchData = ref(null);
-const isSearchingCompany = ref(false);
-const companySearchError = ref(null);
+const activeCacheKey = ref(null);
+const isRefreshing = ref(false);
 
 const vessel = computed(() => vesselStore.currentVessel);
 
@@ -110,35 +112,108 @@ const goBack = () => {
   router.push({ name: "search" });
 };
 
-const handleSearchCompany = async ({ companyName, role }) => {
-  isSearchingCompany.value = true;
-  companySearchError.value = null;
-  companySearchData.value = null;
+const normalizeRole = (role) => role.toLowerCase().replace(/ /g, "_");
 
+const runCompanySearch = async (companyName, role, cacheKey) => {
+  companySearchStore.startSearch(cacheKey);
   try {
     const response = await searchCompany(
       companyName,
-      role.toLowerCase().replace(/ /g, "_"),
+      normalizeRole(role),
       vesselContext.value,
       userStore.persona || "general",
     );
-
     if (response.success) {
-      companySearchData.value = response.data;
+      companySearchStore.finishSearch(cacheKey, response.data);
+      return response.data;
     } else {
-      companySearchError.value = response.message || "Failed to search company";
+      companySearchStore.failSearch(
+        cacheKey,
+        response.message || "Failed to search company",
+      );
+      return null;
     }
   } catch (error) {
-    companySearchError.value =
+    companySearchStore.failSearch(
+      cacheKey,
       error.response?.data?.detail ||
-      "Failed to search company. Please try again.";
+        "Failed to search company. Please try again.",
+    );
+    return null;
+  }
+};
+
+const handleSearchCompany = async ({ companyName, role }) => {
+  const cacheKey = buildCacheKey(companyName, role, vesselContext.value.imo);
+
+  // If cached, show immediately
+  const cached = companySearchStore.getCached(cacheKey);
+  if (cached) {
+    companySearchData.value = cached;
+    activeCacheKey.value = cacheKey;
+    return;
+  }
+
+  // If already pending, do nothing (search in progress)
+  if (companySearchStore.pendingSearches.has(cacheKey)) return;
+
+  // Fire background search (non-blocking)
+  activeCacheKey.value = cacheKey;
+  runCompanySearch(companyName, role, cacheKey).then((data) => {
+    // If this panel is not currently open (user navigated away etc.), don't show
+    if (activeCacheKey.value === cacheKey && data) {
+      companySearchData.value = data;
+    }
+  });
+};
+
+const handleRefresh = async () => {
+  if (!activeCacheKey.value || isRefreshing.value) return;
+  const key = activeCacheKey.value;
+
+  // Determine companyName and role from cache entry to re-run the search
+  // We can re-derive them from the current companySearchData
+  const companyName = companySearchData.value?.company_name;
+  if (!companyName) return;
+
+  // Invalidate cache so a fresh result is stored
+  companySearchStore.invalidateCache(key);
+
+  // Extract role from cache key: format is name__role__imo
+  const parts = key.split("__");
+  const roleForApi = parts.length >= 2 ? parts[1] : "";
+
+  isRefreshing.value = true;
+  try {
+    companySearchStore.startSearch(key);
+    const response = await searchCompany(
+      companyName,
+      roleForApi,
+      vesselContext.value,
+      userStore.persona || "general",
+    );
+    if (response.success) {
+      companySearchStore.finishSearch(key, response.data);
+      companySearchData.value = response.data;
+    } else {
+      companySearchStore.failSearch(
+        key,
+        response.message || "Failed to refresh company details",
+      );
+    }
+  } catch (error) {
+    companySearchStore.failSearch(
+      key,
+      error.response?.data?.detail || "Failed to refresh company details.",
+    );
   } finally {
-    isSearchingCompany.value = false;
+    isRefreshing.value = false;
   }
 };
 
 const closeCompanyResults = () => {
   companySearchData.value = null;
+  activeCacheKey.value = null;
 };
 </script>
 
@@ -194,35 +269,21 @@ const closeCompanyResults = () => {
             v-if="vessel.ownership"
             :ownership="vessel.ownership"
             :vessel-context="vesselContext"
+            :pending-keys="[...companySearchStore.pendingSearches]"
+            :cached-keys="Object.keys(companySearchStore.cache)"
             @search-company="handleSearchCompany"
           />
         </div>
       </template>
     </main>
 
-    <div
-      v-if="isSearchingCompany"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-    >
-      <div class="bg-white rounded-xl shadow-xl p-8 text-center">
-        <LoadingSpinner size="lg" />
-        <p class="mt-4 text-slate-600">Searching for company details...</p>
-        <p class="mt-1 text-sm text-slate-500">This may take a few seconds</p>
-      </div>
-    </div>
-
     <CompanySearchResults
       v-if="companySearchData"
       :data="companySearchData"
       :persona-display="userStore.personaDisplay"
+      :is-refreshing="isRefreshing"
       @close="closeCompanyResults"
+      @refresh="handleRefresh"
     />
-
-    <div v-if="companySearchError" class="fixed bottom-4 right-4 max-w-md z-50">
-      <ErrorMessage
-        :message="companySearchError"
-        @dismiss="companySearchError = null"
-      />
-    </div>
   </div>
 </template>

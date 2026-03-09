@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import { buildCacheKey } from "../../stores/companySearch";
 
 const props = defineProps({
   ownership: {
@@ -9,6 +10,14 @@ const props = defineProps({
   vesselContext: {
     type: Object,
     required: true,
+  },
+  pendingKeys: {
+    type: Array,
+    default: () => [],
+  },
+  cachedKeys: {
+    type: Array,
+    default: () => [],
   },
 });
 
@@ -31,10 +40,20 @@ const ownershipItems = computed(() => {
       const companyName = props.ownership[role.key];
       const isDuplicate = seen.has(companyName);
       seen.add(companyName);
+      const cacheKey = buildCacheKey(
+        companyName,
+        role.label,
+        props.vesselContext.imo,
+      );
+      const isPending = props.pendingKeys.includes(cacheKey);
+      const isCached = props.cachedKeys.includes(cacheKey);
       return {
         ...role,
         companyName,
         isDuplicate,
+        cacheKey,
+        isPending,
+        isCached,
       };
     });
 });
@@ -68,7 +87,57 @@ const handleSearchCompany = (companyName, role) => {
             {{ item.companyName }}
           </p>
         </div>
+        <!-- Pending state -->
         <button
+          v-if="item.isPending"
+          disabled
+          class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-100 rounded-md cursor-not-allowed"
+          :title="`Searching ${item.companyName}…`"
+        >
+          <svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle
+              class="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="4"
+            />
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            />
+          </svg>
+          Searching…
+        </button>
+
+        <!-- Cached state -->
+        <button
+          v-else-if="item.isCached"
+          @click="handleSearchCompany(item.companyName, item.label)"
+          class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md transition-colors"
+          :title="`View cached results for ${item.companyName}`"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          View Results
+        </button>
+
+        <!-- Default state -->
+        <button
+          v-else
           @click="handleSearchCompany(item.companyName, item.label)"
           class="flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary-50 hover:bg-primary-100 rounded-md transition-colors"
           :title="`View ${item.companyName} details`"

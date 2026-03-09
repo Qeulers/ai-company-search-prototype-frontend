@@ -3,6 +3,7 @@ import { RouterView, useRouter } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { onMounted, onUnmounted } from "vue";
 import { onAuthEvent, validateSession } from "./services/polestarApi";
+import ToastContainer from "./components/common/ToastContainer.vue";
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -35,4 +36,5 @@ onUnmounted(() => {
 
 <template>
   <RouterView />
+  <ToastContainer />
 </template>
